@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "start": "browser-sync start -s -w --no-open --no-notify --no-ghost-mode --https"
+  },
+  "devDependencies": {
+    "browser-sync": "^2.26.14",
+    "prettier": "^2.3.0"
+  }
+}
