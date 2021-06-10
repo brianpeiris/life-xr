@@ -12,6 +12,10 @@ const {
   Group,
   BoxGeometry,
   MeshStandardMaterial,
+  ShaderMaterial,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Points,
   OrbitControls,
   TextureLoader,
   Sprite,
@@ -19,14 +23,35 @@ const {
   Box3,
   Vector3,
   Box3Helper,
+  RepeatWrapping,
+  AdditiveBlending,
 } = THREE;
 
-const gridSize = 32;
+const gridSize = 8;
 let grid = [];
 let newGrid = [];
-let boxes = [];
 
-const scene = new Scene();
+const scene = window.scene = new Scene();
+
+const vertexShader = `
+attribute float size;
+attribute vec3 ca;
+varying vec3 vColor;
+void main() {
+  vColor = ca;
+  vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+  gl_PointSize = size * ( 1000.0 / -mvPosition.z );
+  gl_Position = projectionMatrix * mvPosition;
+}
+`;
+
+const fragmentShader = `
+uniform sampler2D pointTexture;
+varying vec3 vColor;
+void main() {
+  gl_FragColor = vec4( vColor, 1.0 ) * texture2D( pointTexture, gl_PointCoord );;
+}
+`;
 
 const box = new Box3();
 box.setFromCenterAndSize(new Vector3(0, 0, 0), new Vector3(gridSize, gridSize, gridSize));
@@ -34,7 +59,7 @@ box.setFromCenterAndSize(new Vector3(0, 0, 0), new Vector3(gridSize, gridSize, g
 const helper = new Box3Helper(box, 0x8d5400);
 
 const config = {
-  enabled: false,
+  enabled: true,
   delay: 60,
   lonely: 16,
   crowded: 27,
@@ -50,8 +75,6 @@ gui.add(config, "crowded", 0, 125, 1);
 gui.add(config, "birth", 0, 125, 1);
 gui.add(config, "randomize");
 gui.add(config, "updateGrid");
-
-const map = window.map = new TextureLoader().load("sprite.png");
 
 const light = new DirectionalLight();
 light.position.set(1, 2, 3);
@@ -71,32 +94,60 @@ const gridGroup = new Group();
 gridGroup.add(helper);
 scene.add(gridGroup);
 
-function createGrid() {
-  //const geo = new BoxGeometry(0.6, 0.6, 0.6);
-  //const mat = new MeshStandardMaterial();
+const pointTexture = new TextureLoader().load("sprite.png");
+pointTexture.wrapS = RepeatWrapping;
+pointTexture.wrapT = RepeatWrapping;
+const pointMaterial = new ShaderMaterial({
+  uniforms: {
+    pointTexture: { value: pointTexture }
+  },
+  vertexShader,
+  fragmentShader,
+  alphaTest: 0.5,
+  transparent: true,
+  depthWrite: false,
+  depthTest: false,
+  blending: AdditiveBlending,
+});
 
+const pointPositions = [];
+const pointSizes = [];
+const pointColors = [];
+
+for (let i = 0; i < gridSize ** 3 * 3; i++) {
+  pointPositions.push(i, 0, 0);
+  pointSizes.push(1);
+  pointColors.push(1, 1, 1);
+}
+
+const pointGeometry = window.pointGeometry = new THREE.BufferGeometry();
+pointGeometry.setAttribute("position", new Float32BufferAttribute(pointPositions, 3));
+pointGeometry.setAttribute("size", new Float32BufferAttribute(pointSizes, 1));
+pointGeometry.setAttribute("ca", new Float32BufferAttribute(pointColors, 3));
+
+const points = new THREE.Points(pointGeometry, pointMaterial);
+gridGroup.add(points);
+
+function createGrid() {
+  const positionArray = pointGeometry.attributes.position.array;
   for (let x = 0; x < gridSize; x++) {
     if (!grid[x]) grid[x] = [];
     if (!newGrid[x]) newGrid[x] = [];
-    if (!boxes[x]) boxes[x] = [];
     for (let y = 0; y < gridSize; y++) {
       if (!grid[x][y]) grid[x][y] = [];
       if (!newGrid[x][y]) newGrid[x][y] = [];
-      if (!boxes[x][y]) boxes[x][y] = [];
       for (let z = 0; z < gridSize; z++) {
-        const box = new Sprite(new SpriteMaterial({ map: map }));
         grid[x][y][z] = true;
-        boxes[x][y][z] = box;
-        box.visible = grid[x][y][z];
-        box.position.set(x - gridSize / 2 + 0.5, y - gridSize / 2 + 0.5, z - gridSize / 2 + 0.5);
-        gridGroup.add(box);
+        const index = x * 3 + y * gridSize * 3 + z * gridSize ** 2 * 3;
+        positionArray[index + 0] = x - gridSize / 2 + 0.5;
+        positionArray[index + 1] = y - gridSize / 2 + 0.5;
+        positionArray[index + 2] = z - gridSize / 2 + 0.5;
       }
     }
   }
-  randomize();
 }
 createGrid();
-updateGrid();
+randomize();
 
 function mod(n, s) {
   if (n < 0) return s + n;
@@ -126,23 +177,28 @@ function makeSeed() {
 }
 
 function randomize() {
-  //const seed = makeSeed();
+  const seed = makeSeed();
   //const seed = "bdyrwfow"
   //const seed = "uvaagdsg";
   //const seed = "aqjeddya";
-  const seed = "clrwhlee";
+  //const seed = "clrwhlee";
   Math.seedrandom(seed);
   console.log(seed);
+  const sizeArray = pointGeometry.attributes.size.array;
   for (let x = 0; x < gridSize; x++) {
     for (let y = 0; y < gridSize; y++) {
       for (let z = 0; z < gridSize; z++) {
-        grid[x][y][z] = Math.random() > 0.5;
+        grid[x][y][z] = Math.random() > 0.95;
+        const index = x + y * gridSize + z * gridSize ** 2;
+        sizeArray[index] = grid[x][y][z] ? 1 : 0.00001;
       }
     }
   }
+  updateGrid();
 }
 
 function updateGrid() {
+  const sizeArray = pointGeometry.attributes.size.array;
   for (let x = 0; x < gridSize; x++) {
     for (let y = 0; y < gridSize; y++) {
       for (let z = 0; z < gridSize; z++) {
@@ -158,10 +214,9 @@ function updateGrid() {
         }
         newGrid[x][y][z] = alive;
         if (alive) {
-          boxes[x][y][z].scale.setScalar(1);
-          boxes[x][y][z].material.color.g = 1;
+          const index = x + y * gridSize + z * gridSize ** 2;
+          sizeArray[index] = 1;
         }
-        boxes[x][y][z].userData.dead = !alive;
       }
     }
   }
@@ -171,17 +226,21 @@ function updateGrid() {
 }
 
 function decaySprites() {
+  const sizeArray = pointGeometry.attributes.size.array;
   for (let x = 0; x < gridSize; x++) {
     for (let y = 0; y < gridSize; y++) {
       for (let z = 0; z < gridSize; z++) {
-        const box = boxes[x][y][z];
-        if (box.userData.dead && box.scale.x > 0.00001) {
-          box.scale.setScalar(box.scale.x * 0.90);
-          box.material.color.g = box.scale.x;
+        if (!grid[x][y][z]) {
+          const index = x + y * gridSize + z * gridSize ** 2;
+          if (sizeArray[index] > 0.00001) {
+            sizeArray[index] *= 0.95;
+          }
         }
       }
     }
   }
+  pointGeometry.attributes.size.needsUpdate = true;
+  pointGeometry.attributes.ca.needsUpdate = true;
 }
 
 const stats = new Stats();
