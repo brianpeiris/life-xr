@@ -6,6 +6,28 @@
     <style>
       body {
         margin: 0;
+        display: flex;
+        justify-content: center;
+        font-family: sans-serif;
+      }
+      #info {
+        position: absolute;
+        bottom: 10px;
+        border: 1px solid white;
+        border-radius: 4px;
+      }
+      #info img {
+        opacity: 0.8;
+        border-radius: 4px;
+      }
+      #info #close {
+        position: absolute;
+        background: black;
+        color: grey;
+        border: 1px solid grey;
+        border-radius: 2px;
+        top: 5px;
+        right: 5px;
       }
     </style>
     <script src="https://unpkg.com/three@0.129.0/build/three.min.js"></script>
@@ -15,5 +37,10 @@
     <script src="https://unpkg.com/seedrandom@3.0.5/seedrandom.min.js"></script>
     <script src="index.js" type="module" defer></script>
   </head>
-  <body></body>
+  <body>
+    <div id="info">
+      <img src="life-controller-map.png" />
+      <button id="close" onClick="info.style.display='none'">X</button>
+    </div>
+  </body>
 </html>

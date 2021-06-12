@@ -328,7 +328,7 @@ function loop(time) {
 
 renderer.setAnimationLoop(loop);
 
-document.body.appendChild(VRButton.createButton(renderer));
+info.appendChild(VRButton.createButton(renderer));
 
 renderer.xr.addEventListener("sessionend", () => {
   controls.update();
