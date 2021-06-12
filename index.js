@@ -114,7 +114,7 @@ const pointMaterial = new ShaderMaterial({
 });
 
 gridGroup.scale.setScalar(1 / gridSize / 2);
-pointMaterial.uniforms.scale.value = gridGroup.scale.x * 5;
+pointMaterial.uniforms.scale.value = gridGroup.scale.x * 6;
 
 const pointPositions = [];
 const pointSizes = [];
@@ -279,7 +279,7 @@ function loop(time) {
     } else if (stickVal < -0.5) {
       gridGroup.scale.multiplyScalar(1 + 0.05);
     }
-    pointMaterial.uniforms.scale.value = gridGroup.scale.x * 5;
+    pointMaterial.uniforms.scale.value = gridGroup.scale.x * 6;
 
     if (gamepad.buttons[3].pressed) {
       if (gamepad.buttons[3].released) clear();
