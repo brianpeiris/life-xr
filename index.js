@@ -269,17 +269,31 @@ document.body.append(stats.dom);
 
 let gamepads = [];
 let lastUpdate = 0;
-let lastTriggerPress = 0;
 const vec = new Vector3();
 function loop(time) {
   for (const gamepad of gamepads) {
-    const stickVal = gamepad.axes[3];
-    if (stickVal > 0.5) {
+    const yVal = gamepad.axes[3];
+    if (yVal > 0.7) {
       gridGroup.scale.multiplyScalar(1 - 0.05);
-    } else if (stickVal < -0.5) {
+    } else if (yVal < -0.7) {
       gridGroup.scale.multiplyScalar(1 + 0.05);
     }
     pointMaterial.uniforms.scale.value = gridGroup.scale.x * 6;
+
+    const xVal = gamepad.axes[2];
+    if (xVal > 0.7) {
+      if (gamepad.xPlusReleased && !config.enabled) updateGrid();
+      gamepad.xPlusReleased = false;
+    } else {
+      gamepad.xPlusReleased = true;
+    }
+
+    if (xVal < -0.7) {
+      if (gamepad.xMinusReleased) config.wrap = !config.wrap;
+      gamepad.xMinusReleased = false;
+    } else {
+      gamepad.xMinusReleased = true;
+    }
 
     if (gamepad.buttons[3].pressed) {
       if (gamepad.buttons[3].released) clear();
@@ -303,8 +317,7 @@ function loop(time) {
     }
 
     if (gamepad.buttons[0].pressed) {
-      if (Date.now() - lastTriggerPress > 150) {
-        lastTriggerPress = Date.now();
+      if (gamepad.buttons[0].released) {
         vec.copy(gamepad.controller.position);
         gridGroup.worldToLocal(vec);
         vec.addScalar(gridSize / 2 - 0.5);
@@ -314,7 +327,10 @@ function loop(time) {
           const index = x + y * gridSize + z * gridSize ** 2;
           pointGeometry.attributes.size.array[index] = grid[x][y][z] ? 1 : minSpriteSize;
         }
-      }
+        gamepad.buttons[0].released = false;
+      } 
+    } else {
+      gamepad.buttons[0].released = true;
     }
   }
   if (config.enabled && time - lastUpdate > config.delay) {
@@ -322,6 +338,7 @@ function loop(time) {
     lastUpdate = time;
   }
   decaySprites();
+  helper.material.color.setHex(config.enabled ? (config.wrap ? 0xead800 : 0xff6500) : (config.wrap ? 0x9b8f00 : 0x923a00));
   renderer.render(scene, camera);
   stats.update();
 }
