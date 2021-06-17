@@ -27,8 +27,10 @@ const {
 } = THREE;
 
 const gridSize = 32;
-let grid = [];
-let newGrid = [];
+const gs2 = gridSize ** 2;
+const gs3 = gridSize ** 3;
+let grid = new Uint8Array(gs3);
+let newGrid = new Uint8Array(gs3);
 
 const scene = new Scene();
 
@@ -38,7 +40,7 @@ attribute float size;
 varying float dis;
 void main() {
   vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-  gl_PointSize = scale * 1.0 * size * ( 100.0 / -mvPosition.z );
+  gl_PointSize = scale * size * ( 100.0 / -mvPosition.z );
   dis = gl_PointSize;
   gl_Position = projectionMatrix * mvPosition;
 }
@@ -59,6 +61,8 @@ const minSpriteSize = 0.00001;
 const config = {
   enabled: true,
   wrap: false,
+  randomRatio: 0.98,
+  particleSize: 6,
   delay: 60,
   lonely: 16,
   crowded: 23,
@@ -69,6 +73,8 @@ const config = {
 const gui = new dat.GUI();
 gui.add(config, "enabled");
 gui.add(config, "wrap");
+gui.add(config, "randomRatio", 0, 1);
+gui.add(config, "particleSize", 1, 200);
 gui.add(config, "delay", 0, 1000, 10);
 gui.add(config, "lonely", 0, 125, 1);
 gui.add(config, "crowded", 0, 125, 1);
@@ -114,17 +120,20 @@ const pointMaterial = new ShaderMaterial({
 });
 
 gridGroup.scale.setScalar(1 / gridSize / 2);
-pointMaterial.uniforms.scale.value = gridGroup.scale.x * 6;
+pointMaterial.uniforms.scale.value = gridGroup.scale.x * config.particleSize;
 
 const pointPositions = [];
 const pointSizes = [];
 
-for (let i = 0; i < gridSize ** 3 * 3; i++) {
-  pointPositions.push(i, 0, 0);
+for (let i = 0; i < gs3; i++) {
+  const x = i % gridSize;
+  const y = ((i - x) / gridSize) % gridSize;
+  const z = (i - y * gridSize - x) / gs2;
+  pointPositions.push(x - gridSize / 2 + 0.5, y - gridSize / 2 + 0.5, z - gridSize / 2 + 0.5);
   pointSizes.push(1);
 }
 
-const pointGeometry = new BufferGeometry();
+const pointGeometry = (window.pointGeometry = new BufferGeometry());
 pointGeometry.setAttribute("position", new Float32BufferAttribute(pointPositions, 3));
 pointGeometry.setAttribute("size", new Float32BufferAttribute(pointSizes, 1));
 
@@ -133,20 +142,8 @@ gridGroup.add(points);
 
 function createGrid() {
   const positionArray = pointGeometry.attributes.position.array;
-  for (let x = 0; x < gridSize; x++) {
-    if (!grid[x]) grid[x] = [];
-    if (!newGrid[x]) newGrid[x] = [];
-    for (let y = 0; y < gridSize; y++) {
-      if (!grid[x][y]) grid[x][y] = [];
-      if (!newGrid[x][y]) newGrid[x][y] = [];
-      for (let z = 0; z < gridSize; z++) {
-        grid[x][y][z] = true;
-        const index = x * 3 + y * gridSize * 3 + z * gridSize ** 2 * 3;
-        positionArray[index + 0] = x - gridSize / 2 + 0.5;
-        positionArray[index + 1] = y - gridSize / 2 + 0.5;
-        positionArray[index + 2] = z - gridSize / 2 + 0.5;
-      }
-    }
+  for (let i = 0; i < gs3; i++) {
+    grid[i] = 1;
   }
 }
 createGrid();
@@ -159,22 +156,55 @@ function mod(n, s) {
 
 function oob(x, y, z) {
   const gs = gridSize;
-  return x >= gs || y >= gs || z >= gs || x < 0 || y < 0 || z < 0;
+  return x === gs || y === gs || z === gs || x === -1 || y === -1 || z === -1;
 }
 
 function countNeighbors(a, b, c) {
   const gs = gridSize;
-  let count = 0;
-  for (let x = a - 1; x < a + 2; x++) {
-    for (let y = b - 1; y < b + 2; y++) {
-      for (let z = c - 1; z < c + 2; z++) {
-        if (x === a && y === b && z === c) continue;
-        if (!config.wrap && oob(x, y, z)) continue;
-        if (grid[mod(x, gs)][mod(y, gs)][mod(z, gs)]) count++;
+  if (a === gs - 1 || b === gs - 1 || c === gs - 1 || a === 0 || b === 0 || c === 0) {
+    let count = 0;
+    for (let x = a - 1; x < a + 2; x++) {
+      for (let y = b - 1; y < b + 2; y++) {
+        for (let z = c - 1; z < c + 2; z++) {
+          if (x === a && y === b && z === c) continue;
+          if (!config.wrap && oob(x, y, z)) continue;
+          const i = mod(x, gs) + mod(y, gs) * gridSize + mod(z, gs) * gs2;
+          if (grid[i] === 1) count++;
+        }
       }
     }
+    return count;
+  } else {
+    let count = 0;
+    let x, y, z;
+    x = a - 1, y = b, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b - 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b - 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b - 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b + 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b + 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a - 1, y = b + 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b - 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b - 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b - 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b + 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b + 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a + 1, y = b + 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b - 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b - 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b - 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b + 1, z = c; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b + 1, z = c - 1; count += grid[x + y * gridSize + z * gs2];
+    x = a, y = b + 1, z = c + 1; count += grid[x + y * gridSize + z * gs2];
+    return count;
   }
-  return count;
 }
 
 function makeSeed() {
@@ -187,14 +217,9 @@ function makeSeed() {
 
 function clear() {
   const sizeArray = pointGeometry.attributes.size.array;
-  for (let x = 0; x < gridSize; x++) {
-    for (let y = 0; y < gridSize; y++) {
-      for (let z = 0; z < gridSize; z++) {
-        grid[x][y][z] = false;
-        const index = x + y * gridSize + z * gridSize ** 2;
-        sizeArray[index] = minSpriteSize;
-      }
-    }
+  for (let i = 0; i < gs3; i++) {
+    grid[i] = 0;
+    sizeArray[i] = minSpriteSize;
   }
 }
 
@@ -203,42 +228,35 @@ function randomize(seed) {
   Math.seedrandom(seed);
   console.log(seed);
   const sizeArray = pointGeometry.attributes.size.array;
-  for (let x = 0; x < gridSize; x++) {
-    for (let y = 0; y < gridSize; y++) {
-      for (let z = 0; z < gridSize; z++) {
-        grid[x][y][z] = Math.random() > 0.98;
-        const index = x + y * gridSize + z * gridSize ** 2;
-        sizeArray[index] = grid[x][y][z] ? 1 : minSpriteSize;
-      }
-    }
+  for (let i = 0; i < gs3; i++) {
+    grid[i] = Math.random() > config.randomRatio ? 1 : 0;
+    sizeArray[i] = grid[i] === 1 ? 1 : minSpriteSize;
   }
   updateGrid();
 }
 
 function updateGrid() {
   const sizeArray = pointGeometry.attributes.size.array;
-  for (let x = 0; x < gridSize; x++) {
-    for (let y = 0; y < gridSize; y++) {
-      for (let z = 0; z < gridSize; z++) {
-        const nc = countNeighbors(x, y, z);
+  for (let i = 0; i < gs3; i++) {
+    const x = i % gridSize;
+    const y = ((i - x) / gridSize) % gridSize;
+    const z = (i - y * gridSize - x) / gs2;
+    const nc = countNeighbors(x, y, z);
 
-        let alive = grid[x][y][z];
+    let alive = grid[i];
 
-        if (alive) {
-          if (nc <= config.lonely) alive = false;
-          if (nc >= config.crowded) alive = false;
-        } else {
-          if (nc === config.birth) {
-            alive = true;
-          }
-        }
-        newGrid[x][y][z] = alive;
-
-        if (alive) {
-          const index = x + y * gridSize + z * gridSize ** 2;
-          sizeArray[index] = 1;
-        }
+    if (alive === 1) {
+      if (nc <= config.lonely) alive = 0;
+      if (nc >= config.crowded) alive = 0;
+    } else {
+      if (nc === config.birth) {
+        alive = 1;
       }
+    }
+    newGrid[i] = alive;
+
+    if (alive === 1) {
+      sizeArray[i] = 1;
     }
   }
   const temp = grid;
@@ -248,19 +266,13 @@ function updateGrid() {
 
 function decaySprites() {
   const sizeArray = pointGeometry.attributes.size.array;
-  for (let x = 0; x < gridSize; x++) {
-    for (let y = 0; y < gridSize; y++) {
-      for (let z = 0; z < gridSize; z++) {
-        if (!grid[x][y][z]) {
-          const index = x + y * gridSize + z * gridSize ** 2;
-          if (sizeArray[index] > minSpriteSize) {
-            sizeArray[index] *= 0.9;
-          }
-        }
+  for (let i = 0; i < gs3; i++) {
+    if (grid[i] === 0) {
+      if (sizeArray[i] > minSpriteSize) {
+        sizeArray[i] *= 0.9;
       }
     }
   }
-  pointGeometry.attributes.size.needsUpdate = true;
 }
 
 const stats = new Stats();
@@ -278,7 +290,6 @@ function loop(time) {
     } else if (yVal < -0.7) {
       gridGroup.scale.multiplyScalar(1 + 0.05);
     }
-    pointMaterial.uniforms.scale.value = gridGroup.scale.x * 6;
 
     const xVal = gamepad.axes[2];
     if (xVal > 0.7) {
@@ -323,22 +334,27 @@ function loop(time) {
         vec.addScalar(gridSize / 2 - 0.5);
         const [x, y, z] = [Math.round(vec.x), Math.round(vec.y), Math.round(vec.z)];
         if (!oob(x, y, z)) {
-          grid[x][y][z] = !grid[x][y][z];
-          const index = x + y * gridSize + z * gridSize ** 2;
-          pointGeometry.attributes.size.array[index] = grid[x][y][z] ? 1 : minSpriteSize;
+          const i = x + y * gridSize + z * gs2;
+          grid[i] = grid[i] === 1 ? 0 : 1;
+          pointGeometry.attributes.size.array[i] = grid[i] === 1 ? 1 : minSpriteSize;
         }
         gamepad.buttons[0].released = false;
-      } 
+      }
     } else {
       gamepad.buttons[0].released = true;
     }
   }
+  pointMaterial.uniforms.scale.value = gridGroup.scale.x * config.particleSize;
+
   if (config.enabled && time - lastUpdate > config.delay) {
     updateGrid();
     lastUpdate = time;
   }
   decaySprites();
-  helper.material.color.setHex(config.enabled ? (config.wrap ? 0xead800 : 0xff6500) : (config.wrap ? 0x9b8f00 : 0x923a00));
+  pointGeometry.attributes.size.needsUpdate = true;
+  helper.material.color.setHex(
+    config.enabled ? (config.wrap ? 0xead800 : 0xff6500) : config.wrap ? 0x9b8f00 : 0x923a00
+  );
   renderer.render(scene, camera);
   stats.update();
 }
